@@ -1,4 +1,5 @@
 /* eslint-disable sonarjs/no-duplicate-string */
+import { DbFieldType } from '@teable/core';
 import { describe, expect, it } from 'vitest';
 
 import { getDefaultDatetimeParsePattern } from '../../utils/default-datetime-parse-pattern';
@@ -37,5 +38,34 @@ describe('SelectQueryPostgres truthinessScore', () => {
 
     const sql = query.if("('true')::text", "'yes'", "'no'");
     expect(sql).toContain("COALESCE((('true')::text)::boolean, FALSE)");
+  });
+
+  it('coerces json-like numeric branches in IF to avoid CASE jsonb/integer mismatches', () => {
+    const query = new SelectQueryPostgres();
+    query.setContext({
+      timeZone: 'Asia/Shanghai',
+      targetDbFieldType: DbFieldType.Real,
+    } as unknown as never);
+    query.setCallMetadata([
+      { type: 'string', isFieldReference: false },
+      {
+        type: 'string',
+        isFieldReference: true,
+        field: {
+          id: 'fldJsonNumeric',
+          isMultiple: true,
+          isLookup: true,
+          dbFieldName: '__json_numeric',
+          dbFieldType: DbFieldType.Json,
+          cellValueType: 'number',
+        },
+      },
+      { type: 'number', isFieldReference: false },
+    ] as unknown as never);
+
+    const sql = query.if('__cond', '"__json_numeric"', '0');
+    expect(sql).toContain('to_jsonb("__json_numeric")');
+    expect(sql).toContain('jsonb_array_elements_text');
+    expect(sql).toContain('double precision');
   });
 });
